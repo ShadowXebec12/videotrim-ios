@@ -78,7 +78,7 @@ def main():
     root, outside = tmp / "videos", tmp / "outside"
     sub = root / "sub folder é"
     out_dir = root / "out"
-    blocked = root / "NAI gens before 4.30"
+    blocked = root / "blocked stuff 1"
     for folder in (sub, out_dir, outside, blocked):
         folder.mkdir(parents=True)
     ts.load_config(tmp / "config.json")           # finds ffmpeg, writes a config with a fresh key
@@ -100,7 +100,7 @@ def main():
 
     config = json.loads((tmp / "config.json").read_text(encoding="utf-8"))
     config.update(roots=[str(root)], out_dir=str(out_dir), poses=["side b", "pose a"],
-                  blocked_names=["nai gens"])
+                  blocked_names=["blocked stuff"])
     (tmp / "config.json").write_text(json.dumps(config), encoding="utf-8")
     with socket.socket() as probe_sock:
         probe_sock.bind(("127.0.0.1", 0))
@@ -230,11 +230,25 @@ def main():
     status, answer = c.json("/api/trim", body={**base, "start": 0, "end": 20, "format": "webm (vp9/opus)",
                                                 "crf": 10, "prefix": "cancel_"})
     cancel_id, cancel_out = answer["job"]["id"], answer["job"]["output"]
+    # two identical trims sent while another job is still running: each must get its own file name
+    twin = {**base, "prefix": "twin_"}
+    first, second = c.json("/api/trim", body=twin)[1]["job"], c.json("/api/trim", body=twin)[1]["job"]
+    check("waiting jobs get different names", first["name"] == "trim_source clip ünï_0005.mp4".replace("trim_", "twin_")
+          and second["name"] == "twin_source clip ünï_0005_2.mp4", (first["name"], second["name"]))
+    Path(second["output"]).write_bytes(b"keep me")      # a file that shows up while the job waits
     time.sleep(0.6)
     check("cancel accepted", c.json("/api/cancel", {"id": cancel_id}, body={})[1]["ok"])
     job = c.wait(cancel_id)
     check("cancelled job leaves no half file", job["status"] == "cancelled" and not os.path.exists(cancel_out), job)
     check("unknown job id", c.json("/api/job", {"id": "nope"})[1]["ok"] is False)
+    done_first, done_second = c.wait(first["id"]), c.wait(second["id"])
+    check("first waiting job wrote its own file", done_first["status"] == "done" and os.path.isfile(first["output"]),
+          done_first)
+    check("job refuses to overwrite a file that appeared at its name", done_second["status"] == "failed"
+          and Path(second["output"]).read_bytes() == b"keep me", done_second)
+    third = c.json("/api/trim", body=twin)[1]["job"]
+    check("next trim skips past both names", third["name"] == "twin_source clip ünï_0005_3.mp4"
+          and c.wait(third["id"])["status"] == "done", third)
 
     # ── resume ──
     status, saved = c.json("/api/state", body={"path": str(mkv), "start": 1.25, "end": 3.5, "pose": "pose a",
@@ -242,7 +256,7 @@ def main():
     check("state saved, unknown fields dropped", saved["ok"] and saved["edit"]["start"] == 1.25
           and "junk" not in saved["edit"], saved)
     edit = c.json("/api/info", {"path": str(src)})[1]["edit"]
-    check("last trim settings come back with the video", edit and edit["start"] == 0 and edit["prefix"] == "cancel_"
+    check("last trim settings come back with the video", edit and edit["start"] == 5 and edit["prefix"] == "twin_"
           and edit.get("last_output"), edit)
     rows = c.json("/api/recent")[1]["edits"]
     check("recent lists both videos, newest first", [r["name"] for r in rows][:2] == [mkv.name, src.name]

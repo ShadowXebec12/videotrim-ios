@@ -51,6 +51,8 @@ MIME = {".mp4": "video/mp4", ".m4v": "video/x-m4v", ".mov": "video/quicktime", "
         ".webm": "video/webm", ".avi": "video/x-msvideo", ".wmv": "video/x-ms-wmv", ".flv": "video/x-flv",
         ".ts": "video/mp2t"}
 
+RESERVED = set()               # output paths of queued and running jobs, so two jobs never share one
+
 # ── copied from video_trim_gui.py so both tools cut and name files the same way ─
 # name -> (extension, encoder args). {crf} is substituted with the quality value.
 FORMATS = {
@@ -100,13 +102,18 @@ def tag_ts(seconds):
     return ("%d%02d%02d" % (hrs, mins, secs)) if hrs else ("%02d%02d" % (mins, secs))
 
 
+def _taken(path):
+    """On disk already, or promised to a trim that is still waiting or running."""
+    return os.path.exists(path) or os.path.normcase(os.path.abspath(path)) in RESERVED
+
+
 def unique_path(path):
     """Never clobber an existing file: foo.mp4 -> foo_2.mp4 -> foo_3.mp4"""
-    if not os.path.exists(path):
+    if not _taken(path):
         return path
     stem, ext = os.path.splitext(path)
     n = 2
-    while os.path.exists("%s_%d%s" % (stem, n, ext)):
+    while _taken("%s_%d%s" % (stem, n, ext)):
         n += 1
     return "%s_%d%s" % (stem, n, ext)
 
@@ -415,8 +422,9 @@ def plan_job(body):
 
 
 def start_job(body):
-    src, dst, cmd, settings, duration = plan_job(body)
-    with JOB_LOCK:
+    with JOB_LOCK:                 # name choice and reservation are one step
+        src, dst, cmd, settings, duration = plan_job(body)
+        RESERVED.add(_norm(dst))
         JOB_SEQ[0] += 1
         job_id = "%d-%d" % (int(time.time()), JOB_SEQ[0])
         job = {"id": job_id, "status": "queued", "percent": 0, "message": "", "source": src,
@@ -436,10 +444,14 @@ def public_job(job):
 
 
 def run_job(job):
-    cmd = job["cmd"][:1] + ["-progress", "pipe:1", "-nostats"] + job["cmd"][1:]
+    # -n instead of the GUI's -y: a file that appeared while this job waited is never overwritten
+    cmd = job["cmd"][:1] + ["-progress", "pipe:1", "-nostats"] + ["-n" if a == "-y" else a for a in job["cmd"][1:]]
     with JOB_LOCK:
         if job["cancel"]:
             job["status"] = "cancelled"
+            return
+        if os.path.exists(job["output"]):
+            job["status"], job["message"] = "failed", "a file with the output name already exists"
             return
         job["status"] = "running"
         proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
@@ -492,6 +504,8 @@ def worker():
         except Exception as error:
             job["status"], job["message"], job["proc"] = "failed", str(error)[:300], None
             log("job %s failed: %r" % (job["id"], error))
+        with JOB_LOCK:
+            RESERVED.discard(_norm(job["output"]))
         log("job %s %s: %s" % (job["id"], job["status"], job["message"] or job["name"]))
 
 
