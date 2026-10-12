@@ -33,6 +33,7 @@ struct SettingsView: View {
     @AppStorage("key") private var key = ""
     @State private var result = ""
     @State private var testing = false
+    @FocusState private var typing: Bool
 
     var body: some View {
         NavigationStack {
@@ -40,14 +41,19 @@ struct SettingsView: View {
                 Section(header: Text("PC"), footer: Text("Address of the Video Trim server on your PC, for example 192.168.1.10:8776. The key is in config.json next to trim_server.py.")) {
                     TextField("192.168.1.10:8776", text: $server)
                         .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .focused($typing)
                         .accessibilityIdentifier("serverField")
                     SecureField("Key", text: $key)
                         .textContentType(.oneTimeCode)      // stops the iOS "Save Password?" prompt
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .focused($typing)
                         .accessibilityIdentifier("keyField")
                 }
                 Section {
-                    Button(testing ? "Testing..." : "Test connection") { Task { await test() } }
+                    Button(testing ? "Testing..." : "Test connection") {
+                        typing = false      // the keyboard would cover the tab bar
+                        Task { await test() }
+                    }
                         .disabled(testing)
                         .accessibilityIdentifier("testConnection")
                     if !result.isEmpty {
@@ -55,6 +61,7 @@ struct SettingsView: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.immediately)
             .navigationTitle("Settings")
         }
     }
