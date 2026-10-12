@@ -28,6 +28,8 @@ struct FolderView: View {
     @State private var cut = false
     @State private var search = ""
     @AppStorage("sortByDate") private var byDate = false
+    @AppStorage("server") private var server = ""
+    @AppStorage("key") private var key = ""
 
     private var shownFolders: [Entry] {
         search.isEmpty ? folders : folders.filter { $0.name.localizedCaseInsensitiveContains(search) }
@@ -72,7 +74,8 @@ struct FolderView: View {
             }
         }
         .refreshable { await load() }
-        .task { await load() }
+        // also reloads after the address or key is changed in Settings
+        .task(id: server + "|" + key) { await load() }
     }
 
     @MainActor

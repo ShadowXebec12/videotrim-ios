@@ -66,6 +66,13 @@ final class VideoTrimUITests: XCTestCase {
         need(el("file-" + file), "file " + file)
         el("file-" + file).tap()
         need(el("trimButton"), "editor for " + file)
+        top()
+    }
+
+    /// The form is lazy too: rows scrolled off the top stop existing, so go back up before reading them.
+    private func top() {
+        app.swipeDown()
+        app.swipeDown()
     }
 
     // MARK: tests
@@ -128,7 +135,6 @@ final class VideoTrimUITests: XCTestCase {
     func test05FramePreviewAndNudge() {
         launch()
         open("beta.mkv")
-        app.swipeDown()
         need(el("framePreview"), "still frame preview for mkv", swipes: 0)
         need(el("start+1"), "start nudge")
         el("start+1").tap()
@@ -142,8 +148,8 @@ final class VideoTrimUITests: XCTestCase {
     func test06RecentResumes() {
         launch()
         open("beta.mkv")
-        need(el("start+10"), "start nudge")
-        el("start+10").tap()
+        need(el("end+10"), "end nudge")
+        el("end+10").tap()
         need(el("trimButton"), "trim button")
         el("trimButton").tap()
         let status = el("status")
