@@ -1,0 +1,17 @@
+# machine-specific: folders, key, saved edits
+server/config.json
+server/edits.json
+server/trim_server.log
+server/*.tmp
+__pycache__/
+*.pyc
+# iOS build output
+*.ipa
+build/
+build-test/
+DerivedData/
+*.xcodeproj/
+*.xcresult/
+.DS_Store
+ios/Sources/Info.plist
+backup/
