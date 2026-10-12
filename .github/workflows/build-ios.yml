@@ -1,0 +1,64 @@
+name: build-ios
+on:
+  workflow_dispatch:
+  push:
+    paths: ["ios/**", ".github/workflows/build-ios.yml"]
+defaults:
+  run:
+    working-directory: ios
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - run: xcodegen generate
+      - name: Build unsigned
+        run: |
+          xcodebuild -project VideoTrim.xcodeproj -scheme VideoTrim -configuration Release -sdk iphoneos -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build > xcodebuild.log 2>&1 || (grep -E "error:" xcodebuild.log | sort -u | head -60; tail -20 xcodebuild.log; exit 1)
+      - name: Package ipa
+        run: |
+          mkdir Payload
+          cp -R build/Build/Products/Release-iphoneos/VideoTrim.app Payload/
+          zip -qr VideoTrim.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VideoTrim-ipa
+          path: ios/VideoTrim.ipa
+  uitest:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - run: xcodegen generate
+      - name: Start mock PC server
+        run: |
+          python3 Tests/mock_server.py 8776 > mock.log 2>&1 &
+          for i in $(seq 1 20); do curl -s http://127.0.0.1:8776/api/ping >/dev/null && break; sleep 1; done
+          curl -s http://127.0.0.1:8776/api/ping
+      - name: Pick and boot a simulator
+        id: sim
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 Tests/pick_sim.py)
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b || true
+      - name: UI tests in the simulator
+        run: |
+          xcodebuild test -project VideoTrim.xcodeproj -scheme VideoTrim -destination "id=${{ steps.sim.outputs.udid }}" -derivedDataPath build-test -resultBundlePath TestResults.xcresult CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO > xcodebuild-test.log 2>&1 || true
+          grep -E "Test Case .*(passed|failed)|error:|XCTAssert|missing:|never true:|Executed [0-9]+ tests|\*\* TEST" xcodebuild-test.log | tail -80
+          grep -q "\*\* TEST SUCCEEDED \*\*" xcodebuild-test.log
+      - name: Export screenshots
+        if: always()
+        run: |
+          mkdir -p shots
+          xcrun xcresulttool export attachments --path TestResults.xcresult --output-path shots || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: uitest-results
+          path: |
+            ios/shots
+            ios/xcodebuild-test.log
+            ios/mock.log
