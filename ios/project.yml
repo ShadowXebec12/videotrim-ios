@@ -1,0 +1,46 @@
+name: VideoTrim
+options:
+  bundleIdPrefix: dev.videotrim
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  VideoTrim:
+    type: application
+    platform: iOS
+    sources: [Sources]
+    info:
+      path: Sources/Info.plist
+      properties:
+        CFBundleDisplayName: Video Trim
+        CFBundleShortVersionString: "0.1"
+        UILaunchScreen: {}
+        NSLocalNetworkUsageDescription: Connects to the Video Trim server on your PC over the local network.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.videotrim.app
+        SWIFT_VERSION: "5.0"
+        CODE_SIGNING_ALLOWED: NO
+        TARGETED_DEVICE_FAMILY: "1,2"
+  VideoTrimUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [Tests/UITests]
+    dependencies:
+      - target: VideoTrim
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.videotrim.app.uitests
+        SWIFT_VERSION: "5.0"
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: VideoTrim
+        TARGETED_DEVICE_FAMILY: "1,2"
+schemes:
+  VideoTrim:
+    build:
+      targets:
+        VideoTrim: all
+        VideoTrimUITests: [test]
+    test:
+      targets: [VideoTrimUITests]
